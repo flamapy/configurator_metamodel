@@ -1,4 +1,6 @@
-
+from flamapy.core.transformations.model_to_model import ModelToModel
+from flamapy.metamodels.fm_metamodel.models.feature_model import FeatureModel
+from flamapy.metamodels.configurator_metamodel.models.configurator_model import ConfiguratorModel, Question, Option
 
 class FmToConfigurator(ModelToModel):
     @staticmethod
@@ -15,7 +17,7 @@ class FmToConfigurator(ModelToModel):
         self.destination_model = ConfiguratorModel()
     
     def transform(self) -> ConfiguratorModel:
-        for feeature in _inorder_traversal(self.source_model.root)
+        for feature in self._inorder_traversal(self.source_model.root):
             if feature.hasChilds():
                 question = Question(feature.name)
                 for child in feature.childs:
