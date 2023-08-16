@@ -15,7 +15,9 @@ class FmToConfigurator(ModelToModel):
         self.source_model = source_model
         self.counter = 1
         self.destination_model = ConfiguratorModel()
-    
+        self.destination_model.feature_model = source_model
+        self.destination_model.pysat_solver = self.destination_model._init_pysat_solver()
+
     def transform(self) -> ConfiguratorModel:
         for feature in self._inorder_traversal(self.source_model.root): # this requires some work to generalize the use of different traversal strategies
             print(feature.name)
