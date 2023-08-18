@@ -12,7 +12,6 @@ class Configure(Operation):
         return self.result
 
     def execute(self, model: ConfiguratorModel) -> 'Configure':
-        print(model.questions)
         self.configurator_model = model
         self.pysat = model.pysat_solver
         self.result = self._configure(model)
@@ -39,24 +38,40 @@ class Configure(Operation):
             available_options[index].status = OptionStatus.SELECTED
         
         # Return the selected options
-        values= [available_options[index] for index in selected_indices]
-        return self._propagate()
+        #values= [available_options[index] for index in selected_indices]
+        result = self._propagate()
+        if result is None:
+            # Undo the changes
+            for index in selected_indices:
+                # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
+                available_options[index].status = OptionStatus.UNDECIDED
+        return result
     
     def _configure(self, model: ConfiguratorModel) -> None:
         """Configure the model"""
         for question in model.questions:
             implied_values = self._ask_question(question)
+
             # now, its time to update the values in the confiuartor model
+            if implied_values is None:
+                print("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
+                implied_values = self._ask_question(question)
+
             for key, value in implied_values.items():
                 feature_name = self.pysat.features[key]
                 self.configurator_model.set_state(feature_name, value)
+        
+        #Now we showld inform the user about the configuration. 
+        # it may happen that there are options not fixed by the user. In that case, we can complete the configuration 
+        # with a call to the solver or we can ask the user to select the options.
+        print("The configuration is process is done! This is the configuration you selected: ")
 
+        return self.configurator_model._get_configuration()
     def _propagate(self):
         from pysat.solvers import Solver
         # get current model assumptions
         # total_assumptions = [assumptions] + self.configurator_model._get_current_assumptions()
         assumptions=self.configurator_model._get_current_assumptions()
-        print(assumptions)
        # print(total_assumptions)
         # Create a solver instance and add the formula
         with Solver(name="glucose4", bootstrap_with=self.pysat._cnf.clauses) as solver:
@@ -68,8 +83,7 @@ class Configure(Operation):
 
             # If the status is False, the assignment leads to a contradiction
             if status is False:
-                print("The assignment leads to a contradiction!")
-                exit()
+                return None
 
             # Extract values from implied literals
             implied_values = {abs(lit): (lit > 0) for lit in implied_lits}

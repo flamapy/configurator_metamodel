@@ -47,18 +47,19 @@ class ConfiguratorModel(VariabilityModel):
     def __str__(self) -> str:
         return str(self.questions)
     
-    def set_state(self, feature_name: str, feature_value: int):
+    def set_state(self, feature_name: str, feature_value: bool):
         for question in self.questions:
-            if question.name == feature_name:
-                for option in question.options:
-                    if option.feature.name == feature_name:
-                        if feature_value == 1:
-                            option.status = OptionStatus.SELECTED
-                        elif feature_value == -1:
-                            option.status = OptionStatus.DESELECTED
-                        else:
-                            option.status = OptionStatus.UNDECIDED
-                        
+            # if question.name == feature_name:
+            for option in question.options:
+                if option.feature.name == feature_name:
+                    if feature_value == True:
+                        option.status = OptionStatus.SELECTED
+                    elif feature_value == False:
+                        option.status = OptionStatus.DESELECTED
+                    else:
+                        option.status = OptionStatus.UNDECIDED
+                        print("Error: feature value is not boolean")
+
     def _init_pysat_solver(self):
         transformation = FmToPysat(self.feature_model)
         transformation.transform()
@@ -73,3 +74,15 @@ class ConfiguratorModel(VariabilityModel):
                 elif option.status == OptionStatus.DESELECTED:
                     assumptions.append(-self.pysat_solver.variables[option.feature.name])
         return assumptions
+    
+    def _get_configuration(self):
+        configuration = {}
+        for question in self.questions:
+            for option in question.options:
+                if option.status == OptionStatus.SELECTED:
+                    configuration[option.feature.name] = 1
+                elif option.status == OptionStatus.DESELECTED:
+                    configuration[option.feature.name] = -1
+                else:
+                    configuration[option.feature.name] = 0
+        return configuration
