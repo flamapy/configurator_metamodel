@@ -20,7 +20,6 @@ class FmToConfigurator(ModelToModel):
 
     def transform(self) -> ConfiguratorModel:
         for feature in self._inorder_traversal(self.source_model.root): # this requires some work to generalize the use of different traversal strategies
-            print(feature.name)
             if len(feature.get_children()) > 0:
                 question = Question(feature)
                 for child in feature.get_children():

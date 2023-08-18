@@ -47,7 +47,29 @@ class ConfiguratorModel(VariabilityModel):
     def __str__(self) -> str:
         return str(self.questions)
     
+    def set_state(self, feature_name: str, feature_value: int):
+        for question in self.questions:
+            if question.name == feature_name:
+                for option in question.options:
+                    if option.feature.name == feature_name:
+                        if feature_value == 1:
+                            option.status = OptionStatus.SELECTED
+                        elif feature_value == -1:
+                            option.status = OptionStatus.DESELECTED
+                        else:
+                            option.status = OptionStatus.UNDECIDED
+                        
     def _init_pysat_solver(self):
         transformation = FmToPysat(self.feature_model)
         transformation.transform()
         return transformation.destination_model
+    
+    def _get_current_assumptions(self):
+        assumptions = []
+        for question in self.questions:
+            for option in question.options:
+                if option.status == OptionStatus.SELECTED:
+                    assumptions.append(self.pysat_solver.variables[option.feature.name])
+                elif option.status == OptionStatus.DESELECTED:
+                    assumptions.append(-self.pysat_solver.variables[option.feature.name])
+        return assumptions

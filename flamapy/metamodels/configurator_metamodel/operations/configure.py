@@ -13,6 +13,8 @@ class Configure(Operation):
 
     def execute(self, model: ConfiguratorModel) -> 'Configure':
         print(model.questions)
+        self.configurator_model = model
+        self.pysat = model.pysat_solver
         self.result = self._configure(model)
         return self
 
@@ -35,11 +37,48 @@ class Configure(Operation):
         for index in selected_indices:
             # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
             available_options[index].status = OptionStatus.SELECTED
-
+        
         # Return the selected options
-        return [available_options[index] for index in selected_indices]
-
+        values= [available_options[index] for index in selected_indices]
+        return self._propagate()
+    
     def _configure(self, model: ConfiguratorModel) -> None:
         """Configure the model"""
         for question in model.questions:
-            question.answer = self._ask_question(question)
+            implied_values = self._ask_question(question)
+            # now, its time to update the values in the confiuartor model
+            for key, value in implied_values.items():
+                feature_name = self.pysat.features[key]
+                self.configurator_model.set_state(feature_name, value)
+
+    def _propagate(self):
+        from pysat.solvers import Solver
+        # get current model assumptions
+        # total_assumptions = [assumptions] + self.configurator_model._get_current_assumptions()
+        assumptions=self.configurator_model._get_current_assumptions()
+        print(assumptions)
+       # print(total_assumptions)
+        # Create a solver instance and add the formula
+        with Solver(name="glucose4", bootstrap_with=self.pysat._cnf.clauses) as solver:
+            
+            # Perform propagation using the solver's 'propagate' method
+            # This will return a list of literals that are implied by the assumption(s)
+            # Propagate the assignment
+            status, implied_lits = solver.propagate(assumptions=assumptions)
+
+            # If the status is False, the assignment leads to a contradiction
+            if status is False:
+                print("The assignment leads to a contradiction!")
+                exit()
+
+            # Extract values from implied literals
+            implied_values = {abs(lit): (lit > 0) for lit in implied_lits}
+
+            # Determine non-fixed variables
+            #all_vars = set(range(1, self.pysat._cnf.nv + 1))
+            #fixed_vars = set(implied_values.keys())
+            #non_fixed_vars = all_vars - fixed_vars
+
+            #print("Fixed variables and their values:", implied_values)
+            #print("Non-fixed variables:", non_fixed_vars)
+            return implied_values
