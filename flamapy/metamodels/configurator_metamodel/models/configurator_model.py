@@ -86,3 +86,56 @@ class ConfiguratorModel(VariabilityModel):
                 else:
                     configuration[option.feature.name] = 0
         return configuration
+    
+    def _propagate(self):
+        from pysat.solvers import Solver
+        # get current model assumptions
+        # total_assumptions = [assumptions] + self.configurator_model._get_current_assumptions()
+        assumptions=self._get_current_assumptions()
+       # print(total_assumptions)
+        # Create a solver instance and add the formula
+        with Solver(name="glucose4", bootstrap_with=self.pysat_solver._cnf.clauses) as solver:
+            
+            # Perform propagation using the solver's 'propagate' method
+            # This will return a list of literals that are implied by the assumption(s)
+            # Propagate the assignment
+            status, implied_lits = solver.propagate(assumptions=assumptions)
+
+            # If the status is False, the assignment leads to a contradiction
+            if status is False:
+                return None
+
+            implied_values = {abs(lit): (lit > 0) for lit in implied_lits}
+
+            return implied_values
+        
+    def start(self):
+        self.current_question_index = 0
+    
+    def get_current_question(self):
+        return self.questions[self.current_question_index]
+
+    def get_possible_options(self):
+        return list(filter(lambda option: option.status == OptionStatus.UNDECIDED, self.get_current_question().options))
+    
+    def next_question(self):
+        self.current_question_index += 1
+    
+    def answer_question(self, answer):
+        for index in answer:
+            self.get_possible_options()[index].status = OptionStatus.SELECTED
+
+        result = self._propagate()
+        if result is None:
+            # Undo the changes
+            for index in answer:
+                # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
+                self.get_possible_options()[index].status = OptionStatus.UNDECIDED
+            print("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
+            return False
+        else:
+            for key, value in result.items():
+                feature_name = self.pysat_solver.features[key]
+                self.set_state(feature_name, value)
+            print("The assignment is valid.")
+            return True 
