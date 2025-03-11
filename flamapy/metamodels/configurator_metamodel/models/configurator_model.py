@@ -139,3 +139,24 @@ class ConfiguratorModel(VariabilityModel):
                 self.set_state(feature_name, value)
             print("The assignment is valid.")
             return True 
+    
+    def get_current_question_type(self):
+        current_question = self.get_current_question()
+
+        if current_question.feature.is_alternative_group():
+            current_question_type = 'alternative'
+        elif current_question.feature.is_or_group():
+            current_question_type = 'or'
+        else:
+            current_question_type = 'optional'
+        return current_question_type
+
+        
+    def get_current_status(self):
+        status = dict()
+
+        status['currentQuestion'] = self.get_current_question().name
+        status['currentQuestionType'] = self.get_current_question_type()
+        status['possibleOptions'] = [{'id':n, 'name': o.name} for n, o in enumerate(self.get_possible_options())]
+
+        return status
