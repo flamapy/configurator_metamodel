@@ -122,15 +122,16 @@ class ConfiguratorModel(VariabilityModel):
         self.current_question_index += 1
     
     def answer_question(self, answer):
+        possible_options = self.get_possible_options()
         for index in answer:
-            self.get_possible_options()[index].status = OptionStatus.SELECTED
+            possible_options[index].status = OptionStatus.SELECTED
 
         result = self._propagate()
         if result is None:
             # Undo the changes
             for index in answer:
                 # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
-                self.get_possible_options()[index].status = OptionStatus.UNDECIDED
+                possible_options[index].status = OptionStatus.UNDECIDED
             print("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
             return False
         else:
