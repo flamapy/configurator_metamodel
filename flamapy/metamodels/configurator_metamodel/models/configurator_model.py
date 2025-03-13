@@ -119,7 +119,16 @@ class ConfiguratorModel(VariabilityModel):
         return list(filter(lambda option: option.status == OptionStatus.UNDECIDED, self.get_current_question().options))
     
     def next_question(self):
-        self.current_question_index += 1
+        if self.is_last_question():
+            return False
+        else:
+            self.current_question_index += 1
+            if len(self.get_possible_options()) == 0:
+                self.next_question()
+        return True
+
+    def is_last_question(self):
+        return len(self.questions) - 1 == self.current_question_index
     
     def answer_question(self, answer):
         possible_options = self.get_possible_options()
@@ -137,7 +146,9 @@ class ConfiguratorModel(VariabilityModel):
         else:
             for key, value in result.items():
                 feature_name = self.pysat_solver.features[key]
+                print(feature_name, value)
                 self.set_state(feature_name, value)
+            self.set_state(self.get_current_question().name, True)
             print("The assignment is valid.")
             return True 
     
