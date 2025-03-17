@@ -40,6 +40,8 @@ class ConfiguratorModel(VariabilityModel):
         self.pysat_solver = None
 
         self.questions: List[Question] = []
+        self.current_question_index = -1
+        self.history = []
 
     def add_question(self, question: 'Question'):
         self.questions.append(question)
@@ -76,15 +78,15 @@ class ConfiguratorModel(VariabilityModel):
         return assumptions
     
     def _get_configuration(self):
-        configuration = {}
+        configuration = {'selected': [], 'deselected': [], 'undecided': []}
         for question in self.questions:
             for option in question.options:
                 if option.status == OptionStatus.SELECTED:
-                    configuration[option.feature.name] = 1
+                    configuration['selected'].append(option.feature.name)
                 elif option.status == OptionStatus.DESELECTED:
-                    configuration[option.feature.name] = -1
+                    configuration['deselected'].append(option.feature.name)
                 else:
-                    configuration[option.feature.name] = 0
+                    configuration['undecided'].append(option.feature.name)
         return configuration
     
     def _propagate(self):
@@ -110,28 +112,47 @@ class ConfiguratorModel(VariabilityModel):
             return implied_values
         
     def start(self):
-        self.current_question_index = 0
+        self.next_question()
     
     def get_current_question(self):
         return self.questions[self.current_question_index]
 
     def get_possible_options(self):
-        return list(filter(lambda option: option.status == OptionStatus.UNDECIDED, self.get_current_question().options))
+        return list(filter(lambda option: option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory(), self.get_current_question().options))
     
     def next_question(self):
-        if self.is_last_question():
+        if self.is_last_question() or self.is_finished():
             return False
         else:
             self.current_question_index += 1
             if len(self.get_possible_options()) == 0:
-                self.next_question()
+                self.history.append(self._get_configuration())  # Save state before propagation
+                return self.next_question()
         return True
 
+    def previous_question(self):
+        if self.is_first_question():
+            return False
+        else:
+            self.undo_answer()
+            self.current_question_index -= 1
+            if len(self.get_possible_options()) == 0:
+                return self.previous_question()
+        return True
+
+    def is_first_question(self):
+        return self.current_question_index == 0
+    
     def is_last_question(self):
         return len(self.questions) - 1 == self.current_question_index
     
+    def is_finished(self):
+        return len(self.questions) == self.current_question_index
+
+    
     def answer_question(self, answer):
         possible_options = self.get_possible_options()
+        self.history.append(self._get_configuration())  # Save state before propagation
         for index in answer:
             possible_options[index].status = OptionStatus.SELECTED
 
@@ -142,15 +163,31 @@ class ConfiguratorModel(VariabilityModel):
                 # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
                 possible_options[index].status = OptionStatus.UNDECIDED
             print("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
+            self.history.pop()
             return False
         else:
             for key, value in result.items():
                 feature_name = self.pysat_solver.features[key]
-                print(feature_name, value)
                 self.set_state(feature_name, value)
             self.set_state(self.get_current_question().name, True)
+            if self.is_last_question():
+                self.current_question_index += 1
             print("The assignment is valid.")
             return True 
+    
+    def undo_answer(self):
+        if self.history:
+            last_config = self.history.pop()
+            for question in self.questions:
+                for option in question.options:
+                    if option.feature.name in last_config['selected']:
+                        option.status = OptionStatus.SELECTED
+                    elif option.feature.name in last_config['deselected']:
+                        option.status = OptionStatus.DESELECTED
+                    else:
+                        option.status = OptionStatus.UNDECIDED
+            return True
+        return False
     
     def get_current_question_type(self):
         current_question = self.get_current_question()
