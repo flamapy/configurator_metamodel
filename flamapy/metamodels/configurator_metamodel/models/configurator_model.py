@@ -78,15 +78,15 @@ class ConfiguratorModel(VariabilityModel):
         return assumptions
     
     def _get_configuration(self):
-        configuration = {'selected': [], 'deselected': [], 'undecided': []}
+        configuration = dict()
         for question in self.questions:
             for option in question.options:
                 if option.status == OptionStatus.SELECTED:
-                    configuration['selected'].append(option.feature.name)
+                    configuration[option.feature.name] = True
                 elif option.status == OptionStatus.DESELECTED:
-                    configuration['deselected'].append(option.feature.name)
+                    configuration[option.feature.name] = False
                 else:
-                    configuration['undecided'].append(option.feature.name)
+                    configuration[option.feature.name] = None
         return configuration
     
     def _propagate(self):
@@ -180,9 +180,9 @@ class ConfiguratorModel(VariabilityModel):
             last_config = self.history.pop()
             for question in self.questions:
                 for option in question.options:
-                    if option.feature.name in last_config['selected']:
+                    if last_config[option.feature.name] == True:
                         option.status = OptionStatus.SELECTED
-                    elif option.feature.name in last_config['deselected']:
+                    elif last_config[option.feature.name] == False:
                         option.status = OptionStatus.DESELECTED
                     else:
                         option.status = OptionStatus.UNDECIDED
