@@ -208,6 +208,6 @@ class ConfiguratorModel(VariabilityModel):
         status['currentQuestionType'] = self.get_current_question_type()
         status['possibleOptions'] = [{'id':n, 'name': o.name} for n, o in enumerate(self.get_possible_options())]
         status['currentQuestionIndex'] = self.current_question_index
-        status['lastQuestion'] = self.is_last_question()
+        status['questionNumber'] = self.is_last_question()
 
         return status
