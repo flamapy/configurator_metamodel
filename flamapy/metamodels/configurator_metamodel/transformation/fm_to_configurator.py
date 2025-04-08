@@ -1,5 +1,6 @@
 from flamapy.core.transformations.model_to_model import ModelToModel
 from flamapy.metamodels.fm_metamodel.models.feature_model import FeatureModel
+from flamapy.metamodels.fm_metamodel.operations.fm_core_features import FMCoreFeatures
 from flamapy.metamodels.configurator_metamodel.models.configurator_model import ConfiguratorModel, Question, Option
 
 class FmToConfigurator(ModelToModel):
@@ -19,6 +20,10 @@ class FmToConfigurator(ModelToModel):
         self.destination_model.pysat_solver = self.destination_model._init_pysat_solver()
 
     def transform(self) -> ConfiguratorModel:
+        operation = FMCoreFeatures()
+        operation.execute(self.source_model)
+        core_features = operation.get_result()
+
         for feature in self._inorder_traversal(self.source_model.root): # this requires some work to generalize the use of different traversal strategies
             if len(feature.get_children()) > 0:
                 question = Question(feature)
@@ -26,6 +31,9 @@ class FmToConfigurator(ModelToModel):
                     option = Option(child)
                     question.add_option(option)
                 self.destination_model.add_question(question)
+    
+        for core_feature in core_features:
+            self.destination_model.set_state(core_feature.name, True)
                 
         return self.destination_model
 

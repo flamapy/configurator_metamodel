@@ -40,6 +40,8 @@ class ConfiguratorModel(VariabilityModel):
         self.pysat_solver = None
 
         self.questions: List[Question] = []
+        self.current_question_index = -1
+        self.history = []
 
     def add_question(self, question: 'Question'):
         self.questions.append(question)
@@ -76,13 +78,136 @@ class ConfiguratorModel(VariabilityModel):
         return assumptions
     
     def _get_configuration(self):
-        configuration = {}
+        configuration = dict()
         for question in self.questions:
             for option in question.options:
                 if option.status == OptionStatus.SELECTED:
-                    configuration[option.feature.name] = 1
+                    configuration[option.feature.name] = True
                 elif option.status == OptionStatus.DESELECTED:
-                    configuration[option.feature.name] = -1
+                    configuration[option.feature.name] = False
                 else:
-                    configuration[option.feature.name] = 0
+                    configuration[option.feature.name] = None
         return configuration
+    
+    def _propagate(self):
+        from pysat.solvers import Solver
+        # get current model assumptions
+        # total_assumptions = [assumptions] + self.configurator_model._get_current_assumptions()
+        assumptions=self._get_current_assumptions()
+       # print(total_assumptions)
+        # Create a solver instance and add the formula
+        with Solver(name="glucose4", bootstrap_with=self.pysat_solver._cnf.clauses) as solver:
+            
+            # Perform propagation using the solver's 'propagate' method
+            # This will return a list of literals that are implied by the assumption(s)
+            # Propagate the assignment
+            status, implied_lits = solver.propagate(assumptions=assumptions)
+
+            # If the status is False, the assignment leads to a contradiction
+            if status is False:
+                return None
+
+            implied_values = {abs(lit): (lit > 0) for lit in implied_lits}
+
+            return implied_values
+        
+    def start(self):
+        self.next_question()
+    
+    def get_current_question(self):
+        return self.questions[self.current_question_index]
+
+    def get_possible_options(self):
+        return list(filter(lambda option: option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory(), self.get_current_question().options))
+    
+    def next_question(self):
+        if self.is_last_question() or self.is_finished():
+            return False
+        else:
+            self.current_question_index += 1
+            if len(self.get_possible_options()) == 0:
+                self.history.append(self._get_configuration())  # Save state before propagation
+                return self.next_question()
+        return True
+
+    def previous_question(self):
+        if self.is_first_question():
+            return False
+        else:
+            self.undo_answer()
+            self.current_question_index -= 1
+            if len(self.get_possible_options()) == 0:
+                return self.previous_question()
+        return True
+
+    def is_first_question(self):
+        return self.current_question_index == 0
+    
+    def is_last_question(self):
+        return len(self.questions) - 1 == self.current_question_index
+    
+    def is_finished(self):
+        return len(self.questions) == self.current_question_index
+
+    
+    def answer_question(self, answer):
+        possible_options = self.get_possible_options()
+        self.history.append(self._get_configuration())  # Save state before propagation
+        for index in answer:
+            possible_options[index].status = OptionStatus.SELECTED
+
+        result = self._propagate()
+        if result is None:
+            # Undo the changes
+            for index in answer:
+                # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
+                possible_options[index].status = OptionStatus.UNDECIDED
+            print("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
+            self.history.pop()
+            return False
+        else:
+            for key, value in result.items():
+                feature_name = self.pysat_solver.features[key]
+                self.set_state(feature_name, value)
+            self.set_state(self.get_current_question().name, True)
+            if self.is_last_question():
+                self.current_question_index += 1
+            print("The assignment is valid.")
+            return True 
+    
+    def undo_answer(self):
+        if self.history:
+            last_config = self.history.pop()
+            for question in self.questions:
+                for option in question.options:
+                    if last_config[option.feature.name] == True:
+                        option.status = OptionStatus.SELECTED
+                    elif last_config[option.feature.name] == False:
+                        option.status = OptionStatus.DESELECTED
+                    else:
+                        option.status = OptionStatus.UNDECIDED
+            return True
+        return False
+    
+    def get_current_question_type(self):
+        current_question = self.get_current_question()
+
+        if current_question.feature.is_alternative_group():
+            current_question_type = 'alternative'
+        elif current_question.feature.is_or_group():
+            current_question_type = 'or'
+        else:
+            current_question_type = 'optional'
+        return current_question_type
+
+        
+    def get_current_status(self):
+        status = dict()
+
+        status['currentQuestion'] = self.get_current_question().name
+        status['currentQuestionType'] = self.get_current_question_type()
+        status['possibleOptions'] = [{'id':n, 'name': o.name} for n, o in enumerate(self.get_possible_options())]
+        status['currentQuestionIndex'] = self.current_question_index
+        status['questionNumber'] = self.is_last_question()
+
+        return status

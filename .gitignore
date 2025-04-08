@@ -1,0 +1,4 @@
+flamapy/metamodels/configurator_metamodel/*/__pycache__
+flamapy/metamodels/configurator_metamodel/__pycache__
+build/
+dist/
