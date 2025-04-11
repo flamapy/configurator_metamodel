@@ -19,7 +19,7 @@ class Configure(Operation):
     def execute(self, model: ConfiguratorModel) -> 'Configure':
         self.configurator_model = model
         self.pysat= Solver(name='glucose3')
-        print(self.configurator_model.pysat_metamodel)
+
         for clause in self.configurator_model.pysat_metamodel.get_all_clauses():
             self.pysat.add_clause(clause)
         
