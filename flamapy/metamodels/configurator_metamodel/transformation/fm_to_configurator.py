@@ -2,6 +2,7 @@ from flamapy.core.transformations.model_to_model import ModelToModel
 from flamapy.metamodels.fm_metamodel.models.feature_model import FeatureModel
 from flamapy.metamodels.fm_metamodel.operations.fm_core_features import FMCoreFeatures
 from flamapy.metamodels.configurator_metamodel.models.configurator_model import ConfiguratorModel, Question, Option
+from flamapy.metamodels.pysat_metamodel.transformations.fm_to_pysat import FmToPysat
 
 class FmToConfigurator(ModelToModel):
     @staticmethod
@@ -17,7 +18,10 @@ class FmToConfigurator(ModelToModel):
         self.counter = 1
         self.destination_model = ConfiguratorModel()
         self.destination_model.feature_model = source_model
-        self.destination_model.pysat_solver = self.destination_model._init_pysat_solver()
+
+        transformation = FmToPysat(self.destination_model.feature_model)
+        transformation.transform()
+        self.destination_model.pysat_metamodel=transformation.destination_model
 
     def transform(self) -> ConfiguratorModel:
         operation = FMCoreFeatures()
