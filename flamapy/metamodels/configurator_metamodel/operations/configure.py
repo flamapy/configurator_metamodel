@@ -18,10 +18,13 @@ class Configure(Operation):
 
     def execute(self, model: ConfiguratorModel) -> 'Configure':
         self.configurator_model = model
-        self.pysat= Solver(name='glucose3')
-
-        for clause in self.configurator_model.pysat_metamodel.get_all_clauses():
-            self.pysat.add_clause(clause)
+        
+        # Optimize: Only initialize solver if it doesn't exist or if model changed significantly (simplified check)
+        # Assuming model structure doesn't change mid-operation for existing use cases.
+        if not hasattr(self, 'pysat') or self.pysat is None:
+            self.pysat = Solver(name='glucose3')
+            for clause in self.configurator_model.pysat_metamodel.get_all_clauses():
+                self.pysat.add_clause(clause)
         
         return self
 
@@ -41,7 +44,8 @@ class Configure(Operation):
         for question in self.configurator_model.questions:
             for option in question.options:
                 if option.status == OptionStatus.SELECTED:
-                    configuration[option.feature.name] = True
+                     # Use the specific value if available, otherwise True
+                    configuration[option.feature.name] = option.value if option.value is not None else True
                 elif option.status == OptionStatus.DESELECTED:
                     configuration[option.feature.name] = False
                 else:
@@ -49,11 +53,7 @@ class Configure(Operation):
         return configuration
     
     def _propagate(self):
-        # get current model assumptions
-        # total_assumptions = [assumptions] + self.configurator_model._get_current_assumptions()
-        assumptions=self._get_current_assumptions()
-        # Create a solver instance and add the formula
-        # with Solver(name="glucose4", bootstrap_with=self.pysat_solver._cnf.clauses) as solver:
+        assumptions = self._get_current_assumptions()
             
         # Perform propagation using the solver's 'propagate' method
         # This will return a list of literals that are implied by the assumption(s)
@@ -78,24 +78,32 @@ class Configure(Operation):
         return list(filter(lambda option: option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory(), self.get_current_question().options))
     
     def next_question(self):
-        if self.is_last_question() or self.is_finished():
-            return False
-        else:
+        # Refactored to use iteration instead of recursion
+        while True:
+            if self.is_last_question() or self.is_finished():
+                return False
+            
             self.configurator_model.current_question_index += 1
-            if len(self.get_possible_options()) == 0:
-                self.configurator_model.history.append(self._get_configuration())  # Save state before propagation
-                return self.next_question()
-        return True
+            
+            if len(self.get_possible_options()) > 0:
+                # Found a question with options, stop advancing
+                return True
+                
+            # If no possible options, save state and continue loop (equivalent to recursive call)
+            self.configurator_model.history.append(self._get_configuration())
 
     def previous_question(self):
-        if self.is_first_question():
-            return False
-        else:
+        # Refactored to use iteration instead of recursion
+        while True:
+            if self.is_first_question():
+                return False
+            
             self.undo_answer()
-            self.current_question_index -= 1
-            if len(self.get_possible_options()) == 0:
-                return self.previous_question()
-        return True
+            self.configurator_model.current_question_index -= 1
+            
+            if len(self.get_possible_options()) > 0:
+                return True
+            # If no possible options, continue loop (equivalent to recursive call)
 
     def is_first_question(self):
         return self.configurator_model.current_question_index == 0
@@ -107,26 +115,29 @@ class Configure(Operation):
         return len(self.configurator_model.questions) == self.configurator_model.current_question_index
 
     
-    def answer_question(self, answer):
-        possible_options = self.get_possible_options()
+    def answer_question(self, answer: dict):
+        # Answer is now a dictionary {option_name: value}
         self.configurator_model.history.append(self._get_configuration())  # Save state before propagation
-        for index in answer:
-            possible_options[index].status = OptionStatus.SELECTED
+        # Apply the answers
+        for name, value in answer.items():
+            self.configurator_model.set_state(name, value)
 
         result = self._propagate()
         if result is None:
             # Undo the changes
-            for index in answer:
-                # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
-                possible_options[index].status = OptionStatus.UNDECIDED
+            self.undo_answer() 
             LOGGER.debug("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
-            self.configurator_model.history.pop()
             return False
         else:
             for key, value in result.items():
                 feature_name = self.configurator_model.pysat_metamodel.features[key]
                 self.configurator_model.set_state(feature_name, value)
-            self.configurator_model.set_state(self.get_current_question().name, True)
+            
+            # Keeping it safe: if the question name is in options, set it.
+            current_q_name = self.get_current_question().name
+            if current_q_name in self.configurator_model.options_by_name:
+                 self.configurator_model.set_state(current_q_name, True)
+                 
             if self.is_last_question():
                 self.configurator_model.current_question_index += 1
             LOGGER.debug("The assignment is valid.")
@@ -135,19 +146,14 @@ class Configure(Operation):
     def undo_answer(self):
         if self.configurator_model.history:
             last_config = self.configurator_model.history.pop()
-            for question in self.configurator_model.questions:
-                for option in question.options:
-                    if last_config[option.feature.name] == True:
-                        option.status = OptionStatus.SELECTED
-                    elif last_config[option.feature.name] == False:
-                        option.status = OptionStatus.DESELECTED
-                    else:
-                        option.status = OptionStatus.UNDECIDED
+            # Restore state from the dictionary
+            for name, value in last_config.items():
+                self.configurator_model.set_state(name, value)
             return True
         return False
     
     def get_current_question_type(self):
-        current_question = self.configurator_model.get_current_question()
+        current_question = self.get_current_question()
 
         if current_question.feature.is_alternative_group():
             current_question_type = 'alternative'
@@ -166,5 +172,6 @@ class Configure(Operation):
         status['possibleOptions'] = [{'id':n, 'name': o.name} for n, o in enumerate(self.get_possible_options())]
         status['currentQuestionIndex'] = self.configurator_model.current_question_index
         status['questionNumber'] = self.is_last_question()
+        status['possibleOptions'] = [{'id':n, 'name': o.name, 'featureType': o.feature.feature_type} for n, o in enumerate(self.get_possible_options())]
 
         return status
