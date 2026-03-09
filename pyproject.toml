@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flamapy-configurator"
+version = "2.5.0"
+description = "flamapy-configurator is a plugin to flamapy module"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+authors = [
+    {name = "Flamapy", email = "flamapy@us.es"},
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "flamapy-fw~=2.5.0",
+    "flamapy-fm~=2.5.0",
+    "flamapy-sat~=2.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "prospector",
+    "mypy",
+    "coverage",
+]
+
+[project.urls]
+Homepage = "https://github.com/flamapy/configurator_metamodel"
+
+[tool.setuptools.packages.find]
+include = ["flamapy.*"]
+namespaces = true
