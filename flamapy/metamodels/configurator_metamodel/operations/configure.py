@@ -50,11 +50,16 @@ class Configure(Operation):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @property
+    def _model(self) -> ConfiguratorModel:
+        assert self.configurator_model is not None
+        return self.configurator_model
+
     def _get_current_assumptions(self) -> List[int]:
         """Build the list of SAT literals for every decided option."""
         assumptions: List[int] = []
-        variables = self.configurator_model.pysat_metamodel.variables
-        for question in self.configurator_model.questions:
+        variables = self._model.pysat_metamodel.variables
+        for question in self._model.questions:
             for option in question.options:
                 var = variables[option.feature.name]
                 if option.status == OptionStatus.SELECTED:
@@ -66,7 +71,7 @@ class Configure(Operation):
     def _get_configuration(self) -> Dict[str, Any]:
         """Snapshot the current configuration as a plain dictionary."""
         config: Dict[str, Any] = {}
-        for question in self.configurator_model.questions:
+        for question in self._model.questions:
             for option in question.options:
                 if option.status == OptionStatus.SELECTED:
                     config[option.feature.name] = option.value if option.value is not None else True
@@ -79,6 +84,7 @@ class Configure(Operation):
     def _propagate(self) -> Optional[Dict[int, bool]]:
         """Run unit propagation and return implied literals, or None on conflict."""
         assumptions = self._get_current_assumptions()
+        assert self.pysat is not None
         status, implied_lits = self.pysat.propagate(assumptions=assumptions)
 
         if status is False:
@@ -96,7 +102,7 @@ class Configure(Operation):
 
     def get_current_question(self) -> Question:
         """Return the question at the current index."""
-        return self.configurator_model.questions[self.configurator_model.current_question_index]
+        return self._model.questions[self._model.current_question_index]
 
     def get_possible_options(self) -> List[Option]:
         """Return undecided, non-mandatory options for the current question."""
@@ -116,13 +122,13 @@ class Configure(Operation):
             if self.is_last_question() or self.is_finished():
                 return False
 
-            self.configurator_model.current_question_index += 1
+            self._model.current_question_index += 1
 
             if self.get_possible_options():
                 return True
 
             # No choices here; record state and keep advancing
-            self.configurator_model.history.append(self._get_configuration())
+            self._model.history.append(self._get_configuration())
 
     def previous_question(self) -> bool:
         """Retreat to the previous question that has at least one possible option.
@@ -135,27 +141,27 @@ class Configure(Operation):
                 return False
 
             self.undo_answer()
-            self.configurator_model.current_question_index -= 1
+            self._model.current_question_index -= 1
 
             if self.get_possible_options():
                 return True
 
     def is_first_question(self) -> bool:
         """Return True if the current question is the first one."""
-        return self.configurator_model.current_question_index == 0
+        return self._model.current_question_index == 0
 
     def is_last_question(self) -> bool:
         """Return True if the current question is the last one."""
         return (
-            len(self.configurator_model.questions) - 1
-            == self.configurator_model.current_question_index
+            len(self._model.questions) - 1
+            == self._model.current_question_index
         )
 
     def is_finished(self) -> bool:
         """Return True if all questions have been answered."""
         return (
-            len(self.configurator_model.questions)
-            == self.configurator_model.current_question_index
+            len(self._model.questions)
+            == self._model.current_question_index
         )
 
     # ------------------------------------------------------------------
@@ -172,10 +178,10 @@ class Configure(Operation):
             ``True`` if the answer is consistent with the model constraints,
             ``False`` if it causes a contradiction (the change is rolled back).
         """
-        self.configurator_model.history.append(self._get_configuration())
+        self._model.history.append(self._get_configuration())
 
         for name, value in answer.items():
-            self.configurator_model.set_state(name, value)
+            self._model.set_state(name, value)
 
         result = self._propagate()
         if result is None:
@@ -185,17 +191,17 @@ class Configure(Operation):
             )
             return False
 
-        features = self.configurator_model.pysat_metamodel.features
+        features = self._model.pysat_metamodel.features
         for var_id, value in result.items():
-            self.configurator_model.set_state(features[var_id], value)
+            self._model.set_state(features[var_id], value)
 
         # Ensure the current question's parent feature is also marked selected
         current_q_name = self.get_current_question().name
-        if current_q_name in self.configurator_model.options_by_name:
-            self.configurator_model.set_state(current_q_name, True)
+        if current_q_name in self._model.options_by_name:
+            self._model.set_state(current_q_name, True)
 
         if self.is_last_question():
-            self.configurator_model.current_question_index += 1
+            self._model.current_question_index += 1
 
         LOGGER.debug("Answer accepted.")
         return True
@@ -206,12 +212,12 @@ class Configure(Operation):
         Returns:
             ``True`` if history was available and state was restored, ``False`` otherwise.
         """
-        if not self.configurator_model.history:
+        if not self._model.history:
             return False
 
-        last_config = self.configurator_model.history.pop()
+        last_config = self._model.history.pop()
         for name, value in last_config.items():
-            self.configurator_model.set_state(name, value)
+            self._model.set_state(name, value)
         return True
 
     # ------------------------------------------------------------------
@@ -233,7 +239,7 @@ class Configure(Operation):
         return {
             'currentQuestion': self.get_current_question().name,
             'currentQuestionType': self.get_current_question_type(),
-            'currentQuestionIndex': self.configurator_model.current_question_index,
+            'currentQuestionIndex': self._model.current_question_index,
             'isLastQuestion': self.is_last_question(),
             'possibleOptions': [
                 {'id': n, 'name': o.name, 'featureType': o.feature.feature_type}
