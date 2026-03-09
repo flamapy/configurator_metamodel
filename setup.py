@@ -15,7 +15,7 @@ requirements = read_requirements("requirements.txt")
 
 setuptools.setup(
     name="flamapy-configurator",
-    version="2.0.1",
+    version="2.5.0",
     author="Flamapy",
     author_email="flamapy@us.es",
     description="configurator-plugin",
