@@ -1,5 +1,10 @@
 # configurator_metamodel
 
+[![CI](https://github.com/flamapy/configurator_metamodel/actions/workflows/lint.yml/badge.svg)](https://github.com/flamapy/configurator_metamodel/actions)
+[![PyPI](https://img.shields.io/pypi/v/flamapy-configurator)](https://pypi.org/project/flamapy-configurator/)
+[![Python](https://img.shields.io/pypi/pyversions/flamapy-configurator)](https://pypi.org/project/flamapy-configurator/)
+[![License](https://img.shields.io/github/license/flamapy/configurator_metamodel)](LICENSE)
+
 A [Flamapy](https://flamapy.github.io/) plugin that transforms a Feature Model into an
 interactive configurator.  It guides users through a sequence of questions—one per
 feature group—and uses a SAT solver to reject inconsistent selections in real time.
@@ -103,7 +108,8 @@ The main operation class.  Call `execute(model)` to initialise.
 ## Running the tests
 
 ```bash
-python -m pytest verify_refactor.py -v
+make test        # pytest tests/ -sv
+make cov         # coverage report + html
 ```
 
 ## License

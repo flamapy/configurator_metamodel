@@ -1,0 +1,13 @@
+namespace PizzaTyped
+
+features
+	PizzaTyped {abstract}
+		mandatory
+			Name {String "Margherita"}
+			Quantity {Integer 1}
+			Price {Real 9.99}
+		optional
+			ExtraTopping {abstract}
+				alternative
+					ExtraCheese
+					ExtraMeat
