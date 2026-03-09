@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flamapy-configurator"
+version = "2.5.0"
+description = "flamapy-configurator is a plugin to flamapy module"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+authors = [
+    {name = "Flamapy", email = "flamapy@us.es"},
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "flamapy-fw~=2.5.0",
+    "flamapy-fm~=2.5.0",
+    "flamapy-sat~=2.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "ruff",
+    "mypy",
+    "coverage",
+]
+
+[project.urls]
+Homepage = "https://github.com/flamapy/configurator_metamodel"
+
+[tool.setuptools.packages.find]
+include = ["flamapy.*"]
+namespaces = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "C", "PL", "RUF"]
+ignore = [
+    "RUF012",  # mutable class attributes without ClassVar annotation
+    "RUF002",  # ambiguous unicode in docstring
+    "RUF001",  # ambiguous unicode in string
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+"verify_refactor.py" = ["ALL"]
+"test.py" = ["ALL"]
+"build/*" = ["ALL"]
+"__pycache__/*" = ["ALL"]
+
+[tool.mypy]
+scripts_are_modules = true
+show_traceback = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+warn_no_return = true
+strict_optional = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+ignore_missing_imports = true
+warn_unreachable = true

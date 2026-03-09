@@ -1,4 +1,6 @@
-flamapy/metamodels/configurator_metamodel/*/__pycache__
-flamapy/metamodels/configurator_metamodel/__pycache__
 build/
 dist/
+venv/
+*.egg-info
+*__pycache__
+uvl/

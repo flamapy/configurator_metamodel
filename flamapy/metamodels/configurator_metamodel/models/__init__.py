@@ -2,7 +2,7 @@ from .configurator_model import ConfiguratorModel, Question, Option, OptionStatu
 
 __all__ = [
     'ConfiguratorModel',
-    'Question',
     'Option',
-    'OptionStatus'
+    'OptionStatus',
+    'Question'
 ]

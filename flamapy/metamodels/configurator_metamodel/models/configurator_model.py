@@ -1,213 +1,103 @@
+import logging
 from enum import Enum
-from typing import List
-from flamapy.core.models.variability_model import VariabilityModel
-from flamapy.metamodels.fm_metamodel.models.feature_model import FeatureModel, Feature
+from typing import Any, Dict, List
 
+from flamapy.core.models.variability_model import VariabilityModel
+from flamapy.metamodels.fm_metamodel.models.feature_model import Feature, FeatureModel
 from flamapy.metamodels.pysat_metamodel.models.pysat_model import PySATModel
-from flamapy.metamodels.pysat_metamodel.transformations.fm_to_pysat import FmToPysat
+
+LOGGER = logging.getLogger(__name__)
+
 OptionStatus = Enum('OptionStatus', 'SELECTED DESELECTED UNDECIDED')
 
 
 class Option:
-    def __init__(self, feature: Feature):
+    """Represents a selectable option in a configuration question.
+
+    Each option corresponds to a child feature in the feature model.
+    """
+
+    def __init__(self, feature: Feature) -> None:
         self.name = feature.name
         self.status = OptionStatus.UNDECIDED
+        self.value: Any = None
         self.feature = feature
-        
+
     def __str__(self) -> str:
-        return self.name+':'+str(self.status)
-    
+        return f'{self.name}: {self.status} ({self.value})'
+
+
 class Question:
-    def __init__(self, feature:Feature) -> None:
+    """Represents a configuration question derived from a parent feature.
+
+    A question contains the options (child features) the user must choose from.
+    """
+
+    def __init__(self, feature: Feature) -> None:
         self.name = feature.name
         self.options: List[Option] = []
         self.feature = feature
-    
-    def add_option(self, option: Option):  
+
+    def add_option(self, option: Option) -> None:
+        """Add an option to this question."""
         self.options.append(option)
 
     def __str__(self) -> str:
-        self.name+':'+str(self.options)
+        return f'{self.name}: {self.options}'
+
 
 class ConfiguratorModel(VariabilityModel):
+    """A variability model that drives an interactive configuration session.
+
+    Wraps a FeatureModel and its SAT representation to guide users through
+    a sequence of questions, enforcing constraints at every step.
+    """
 
     @staticmethod
     def get_extension() -> str:
         return 'configurator_metamodel'
 
     def __init__(self) -> None:
-        self.feature_model: 'FeatureModel'
-        self.pysat_solver = None
+        self.feature_model: FeatureModel
+        self.pysat_metamodel: PySATModel = None
 
         self.questions: List[Question] = []
+        self.options_by_name: Dict[str, Option] = {}
         self.current_question_index = -1
-        self.history = []
+        self.history: List[Dict[str, Any]] = []
 
-    def add_question(self, question: 'Question'):
+    def add_question(self, question: Question) -> None:
+        """Register a question and index all of its options by name."""
         self.questions.append(question)
+        for option in question.options:
+            self.options_by_name[option.name] = option
+
+    def set_state(self, feature_name: str, feature_value: Any) -> None:
+        """Update the status and value of an option by feature name.
+
+        Args:
+            feature_name: The name of the feature whose option should be updated.
+            feature_value: The new value.  ``True``/``False`` set SELECTED/DESELECTED;
+                any other non-None value sets SELECTED; ``None`` resets to UNDECIDED.
+        """
+        if feature_name not in self.options_by_name:
+            LOGGER.debug(
+                "Feature '%s' not found in options (possibly root or hidden feature).",
+                feature_name,
+            )
+            return
+
+        option = self.options_by_name[feature_name]
+        option.value = feature_value  # Always update so undo / re-configuration works
+
+        if feature_value is True:
+            option.status = OptionStatus.SELECTED
+        elif feature_value is False:
+            option.status = OptionStatus.DESELECTED
+        elif feature_value is not None:
+            option.status = OptionStatus.SELECTED
+        else:
+            option.status = OptionStatus.UNDECIDED
 
     def __str__(self) -> str:
         return str(self.questions)
-    
-    def set_state(self, feature_name: str, feature_value: bool):
-        for question in self.questions:
-            # if question.name == feature_name:
-            for option in question.options:
-                if option.feature.name == feature_name:
-                    if feature_value == True:
-                        option.status = OptionStatus.SELECTED
-                    elif feature_value == False:
-                        option.status = OptionStatus.DESELECTED
-                    else:
-                        option.status = OptionStatus.UNDECIDED
-                        print("Error: feature value is not boolean")
-
-    def _init_pysat_solver(self):
-        transformation = FmToPysat(self.feature_model)
-        transformation.transform()
-        return transformation.destination_model
-    
-    def _get_current_assumptions(self):
-        assumptions = []
-        for question in self.questions:
-            for option in question.options:
-                if option.status == OptionStatus.SELECTED:
-                    assumptions.append(self.pysat_solver.variables[option.feature.name])
-                elif option.status == OptionStatus.DESELECTED:
-                    assumptions.append(-self.pysat_solver.variables[option.feature.name])
-        return assumptions
-    
-    def _get_configuration(self):
-        configuration = dict()
-        for question in self.questions:
-            for option in question.options:
-                if option.status == OptionStatus.SELECTED:
-                    configuration[option.feature.name] = True
-                elif option.status == OptionStatus.DESELECTED:
-                    configuration[option.feature.name] = False
-                else:
-                    configuration[option.feature.name] = None
-        return configuration
-    
-    def _propagate(self):
-        from pysat.solvers import Solver
-        # get current model assumptions
-        # total_assumptions = [assumptions] + self.configurator_model._get_current_assumptions()
-        assumptions=self._get_current_assumptions()
-       # print(total_assumptions)
-        # Create a solver instance and add the formula
-        with Solver(name="glucose4", bootstrap_with=self.pysat_solver._cnf.clauses) as solver:
-            
-            # Perform propagation using the solver's 'propagate' method
-            # This will return a list of literals that are implied by the assumption(s)
-            # Propagate the assignment
-            status, implied_lits = solver.propagate(assumptions=assumptions)
-
-            # If the status is False, the assignment leads to a contradiction
-            if status is False:
-                return None
-
-            implied_values = {abs(lit): (lit > 0) for lit in implied_lits}
-
-            return implied_values
-        
-    def start(self):
-        self.next_question()
-    
-    def get_current_question(self):
-        return self.questions[self.current_question_index]
-
-    def get_possible_options(self):
-        return list(filter(lambda option: option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory(), self.get_current_question().options))
-    
-    def next_question(self):
-        if self.is_last_question() or self.is_finished():
-            return False
-        else:
-            self.current_question_index += 1
-            if len(self.get_possible_options()) == 0:
-                self.history.append(self._get_configuration())  # Save state before propagation
-                return self.next_question()
-        return True
-
-    def previous_question(self):
-        if self.is_first_question():
-            return False
-        else:
-            self.undo_answer()
-            self.current_question_index -= 1
-            if len(self.get_possible_options()) == 0:
-                return self.previous_question()
-        return True
-
-    def is_first_question(self):
-        return self.current_question_index == 0
-    
-    def is_last_question(self):
-        return len(self.questions) - 1 == self.current_question_index
-    
-    def is_finished(self):
-        return len(self.questions) == self.current_question_index
-
-    
-    def answer_question(self, answer):
-        possible_options = self.get_possible_options()
-        self.history.append(self._get_configuration())  # Save state before propagation
-        for index in answer:
-            possible_options[index].status = OptionStatus.SELECTED
-
-        result = self._propagate()
-        if result is None:
-            # Undo the changes
-            for index in answer:
-                # You might want to add checks to ensure valid selection. I.e., call a sat solver and propagate
-                possible_options[index].status = OptionStatus.UNDECIDED
-            print("The assignment leads to a contradiction! you can not configure the product that way. Please try again.")
-            self.history.pop()
-            return False
-        else:
-            for key, value in result.items():
-                feature_name = self.pysat_solver.features[key]
-                self.set_state(feature_name, value)
-            self.set_state(self.get_current_question().name, True)
-            if self.is_last_question():
-                self.current_question_index += 1
-            print("The assignment is valid.")
-            return True 
-    
-    def undo_answer(self):
-        if self.history:
-            last_config = self.history.pop()
-            for question in self.questions:
-                for option in question.options:
-                    if last_config[option.feature.name] == True:
-                        option.status = OptionStatus.SELECTED
-                    elif last_config[option.feature.name] == False:
-                        option.status = OptionStatus.DESELECTED
-                    else:
-                        option.status = OptionStatus.UNDECIDED
-            return True
-        return False
-    
-    def get_current_question_type(self):
-        current_question = self.get_current_question()
-
-        if current_question.feature.is_alternative_group():
-            current_question_type = 'alternative'
-        elif current_question.feature.is_or_group():
-            current_question_type = 'or'
-        else:
-            current_question_type = 'optional'
-        return current_question_type
-
-        
-    def get_current_status(self):
-        status = dict()
-
-        status['currentQuestion'] = self.get_current_question().name
-        status['currentQuestionType'] = self.get_current_question_type()
-        status['possibleOptions'] = [{'id':n, 'name': o.name} for n, o in enumerate(self.get_possible_options())]
-        status['currentQuestionIndex'] = self.current_question_index
-        status['questionNumber'] = self.is_last_question()
-
-        return status
