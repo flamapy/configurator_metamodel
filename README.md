@@ -31,9 +31,9 @@ pip install -e .
 
 | Package | Version |
 |---------|---------|
-| `flamapy-fw` | ~2.0.1 |
-| `flamapy-fm` | ~2.0.0 |
-| `flamapy-pysat` | see `requirements.txt` |
+| `flamapy-fw` | ~2.5.0 |
+| `flamapy-fm` | ~2.5.0 |
+| `flamapy-sat` | ~2.5.0 |
 | Python | ≥ 3.9 |
 
 ## Quick start
