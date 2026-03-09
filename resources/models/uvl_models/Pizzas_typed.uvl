@@ -1,13 +1,24 @@
 namespace PizzaTyped
 
 features
-	PizzaTyped {abstract}
+	Pizza {abstract}
 		mandatory
-			Name {String "Margherita"}
-			Quantity {Integer 1}
-			Price {Real 9.99}
-		optional
-			ExtraTopping {abstract}
+			Topping
+				or
+					Salami
+					Ham
+					Mozzarella
+			Size
 				alternative
-					ExtraCheese
-					ExtraMeat
+					Normal
+					Big
+			Dough
+				alternative
+					Neapolitan
+					Sicilian
+		optional
+			CheesyCrust
+			Integer SpicyLevel
+constraints
+	CheesyCrust => Big
+	SpicyLevel >= 1 & SpicyLevel <= 5

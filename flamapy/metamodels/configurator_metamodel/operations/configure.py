@@ -8,42 +8,37 @@ from flamapy.metamodels.configurator_metamodel.models import (
     OptionStatus,
     Question,
 )
-from pysat.solvers import Solver
 
 LOGGER = logging.getLogger(__name__)
-
-_DEFAULT_SOLVER = 'glucose3'
 
 
 class Configure(Operation):
     """Interactive configuration operation for a ConfiguratorModel.
 
     Guides the user through a sequence of questions derived from the feature
-    model, propagating SAT constraints after every answer and supporting undo.
+    model, propagating constraints after every answer and supporting undo.
+
+    The operation is solver-agnostic: it delegates all satisfiability and
+    propagation work to the :class:`SolverBackend` stored on the model.
+    Use ``FmToConfigurator(fm, solver='pysat')`` (default) for boolean models
+    or ``FmToConfigurator(fm, solver='z3')`` for typed-feature models.
     """
 
     def __init__(self) -> None:
-        self.result = 0
-        self.pysat: Optional[Solver] = None
+        self.result: int = 0
         self.configurator_model: Optional[ConfiguratorModel] = None
 
     # ------------------------------------------------------------------
     # Flamapy Operation interface
     # ------------------------------------------------------------------
 
-    def get_result(self) -> List[int]:
-        """Return the current SAT assumptions (selected / deselected literals)."""
-        return self._get_current_assumptions()
+    def get_result(self) -> Dict[str, Any]:
+        """Return the current configuration as a ``{feature_name: value}`` dict."""
+        return self._get_configuration()
 
     def execute(self, model: ConfiguratorModel) -> 'Configure':
-        """Attach the operation to *model* and initialise the SAT solver."""
+        """Attach the operation to *model*.  The backend is already initialised."""
         self.configurator_model = model
-
-        if self.pysat is None:
-            self.pysat = Solver(name=_DEFAULT_SOLVER)
-            for clause in self.configurator_model.pysat_metamodel.get_all_clauses():
-                self.pysat.add_clause(clause)
-
         return self
 
     # ------------------------------------------------------------------
@@ -55,18 +50,16 @@ class Configure(Operation):
         assert self.configurator_model is not None
         return self.configurator_model
 
-    def _get_current_assumptions(self) -> List[int]:
-        """Build the list of SAT literals for every decided option."""
-        assumptions: List[int] = []
-        variables = self._model.pysat_metamodel.variables
+    def _get_decisions(self) -> Dict[str, Any]:
+        """Current decided options as ``{feature_name: value}``."""
+        result: Dict[str, Any] = {}
         for question in self._model.questions:
             for option in question.options:
-                var = variables[option.feature.name]
                 if option.status == OptionStatus.SELECTED:
-                    assumptions.append(var)
+                    result[option.feature.name] = option.value if option.value is not None else True
                 elif option.status == OptionStatus.DESELECTED:
-                    assumptions.append(-var)
-        return assumptions
+                    result[option.feature.name] = False
+        return result
 
     def _get_configuration(self) -> Dict[str, Any]:
         """Snapshot the current configuration as a plain dictionary."""
@@ -80,17 +73,6 @@ class Configure(Operation):
                 else:
                     config[option.feature.name] = None
         return config
-
-    def _propagate(self) -> Optional[Dict[int, bool]]:
-        """Run unit propagation and return implied literals, or None on conflict."""
-        assumptions = self._get_current_assumptions()
-        assert self.pysat is not None
-        status, implied_lits = self.pysat.propagate(assumptions=assumptions)
-
-        if status is False:
-            return None
-
-        return {abs(lit): lit > 0 for lit in implied_lits}
 
     # ------------------------------------------------------------------
     # Navigation
@@ -183,17 +165,17 @@ class Configure(Operation):
         for name, value in answer.items():
             self._model.set_state(name, value)
 
-        result = self._propagate()
-        if result is None:
+        assert self._model.solver_backend is not None, "No solver backend — call execute() first."
+        implied = self._model.solver_backend.propagate(self._get_decisions())
+        if implied is None:
             self.undo_answer()
             LOGGER.debug(
                 "Answer leads to a contradiction; change rolled back. Please try again."
             )
             return False
 
-        features = self._model.pysat_metamodel.features
-        for var_id, value in result.items():
-            self._model.set_state(features[var_id], value)
+        for name, value in implied.items():
+            self._model.set_state(name, value)
 
         # Ensure the current question's parent feature is also marked selected
         current_q_name = self.get_current_question().name

@@ -8,7 +8,6 @@ from flamapy.metamodels.configurator_metamodel.models.configurator_model import 
     Option,
     Question,
 )
-from flamapy.metamodels.pysat_metamodel.transformations.fm_to_pysat import FmToPysat
 
 
 class FmToConfigurator(ModelToModel):
@@ -17,6 +16,12 @@ class FmToConfigurator(ModelToModel):
     The transformation performs an in-order traversal of the feature tree to
     build an ordered list of questions.  Core (always-selected) features are
     pre-selected so the solver starts with a consistent partial assignment.
+
+    Args:
+        source_model: The feature model to transform.
+        solver: Which backend to use — ``'pysat'`` (default) or ``'z3'``.
+                Use ``'z3'`` for models with typed features (INTEGER, REAL,
+                STRING) or arithmetic cross-tree constraints.
     """
 
     @staticmethod
@@ -27,14 +32,22 @@ class FmToConfigurator(ModelToModel):
     def get_destination_extension() -> str:
         return 'configurator_metamodel'
 
-    def __init__(self, source_model: FeatureModel) -> None:
+    def __init__(self, source_model: FeatureModel, solver: str = 'pysat') -> None:
         self.source_model = source_model
         self.destination_model = ConfiguratorModel()
         self.destination_model.feature_model = source_model
 
-        transformation = FmToPysat(self.destination_model.feature_model)
-        transformation.transform()
-        self.destination_model.pysat_metamodel = transformation.destination_model
+        if solver == 'z3':
+            from flamapy.metamodels.z3_metamodel.transformations.fm_to_z3 import FmToZ3  # noqa: PLC0415
+            from flamapy.metamodels.configurator_metamodel.solver.z3_backend import Z3Backend  # noqa: PLC0415
+            z3_model = FmToZ3(source_model).transform()
+            self.destination_model.solver_backend = Z3Backend(z3_model)
+        else:
+            from flamapy.metamodels.pysat_metamodel.transformations.fm_to_pysat import FmToPysat  # noqa: PLC0415
+            from flamapy.metamodels.configurator_metamodel.solver.pysat_backend import PySATBackend  # noqa: PLC0415
+            transformation = FmToPysat(source_model)
+            transformation.transform()
+            self.destination_model.solver_backend = PySATBackend(transformation.destination_model)
 
     def transform(self) -> ConfiguratorModel:
         """Build and return the ConfiguratorModel."""
@@ -60,15 +73,7 @@ class FmToConfigurator(ModelToModel):
         feature: Optional[Feature] = None,
         result: Optional[List[Feature]] = None,
     ) -> List[Feature]:
-        """Traverse the feature tree in-order and return an ordered list of features.
-
-        Args:
-            feature: The current feature node.  Defaults to the model root.
-            result: Accumulator list; created automatically on the first call.
-
-        Returns:
-            Ordered list of Feature objects.
-        """
+        """Traverse the feature tree in-order and return an ordered list of features."""
         if result is None:
             result = []
         if feature is None:

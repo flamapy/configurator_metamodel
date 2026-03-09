@@ -30,6 +30,9 @@ dev = [
     "mypy",
     "coverage",
 ]
+z3 = [
+    "flamapy-z3~=2.5.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/flamapy/configurator_metamodel"

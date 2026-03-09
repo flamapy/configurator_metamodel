@@ -1,5 +1,4 @@
 """Unit tests for the configurator_metamodel package."""
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -33,20 +32,18 @@ def model() -> ConfiguratorModel:
 
 @pytest.fixture
 def mocked_configure(model: ConfiguratorModel) -> Configure:
-    model.pysat_metamodel = MagicMock()
-    model.pysat_metamodel.variables = {"Child1": 1, "TypedFeat": 2}
-    model.pysat_metamodel.features = {1: "Child1", 2: "TypedFeat"}
+    backend = MagicMock()
+    backend.propagate.return_value = {}  # No implied features by default
+    model.solver_backend = backend
     model.current_question_index = 0
 
     op = Configure()
     op.configurator_model = model
-    op.pysat = MagicMock()
-    op.pysat.propagate.return_value = (True, [])
     return op
 
 
 # ---------------------------------------------------------------------------
-# TestConfiguratorModel
+# ConfiguratorModel — add_question / options_by_name
 # ---------------------------------------------------------------------------
 
 def test_options_by_name_populated(model: ConfiguratorModel) -> None:
@@ -54,6 +51,10 @@ def test_options_by_name_populated(model: ConfiguratorModel) -> None:
     assert "TypedFeat" in model.options_by_name
     assert model.options_by_name["Child1"].feature.name == "Child1"
 
+
+# ---------------------------------------------------------------------------
+# ConfiguratorModel — set_state
+# ---------------------------------------------------------------------------
 
 def test_set_state_integer_value(model: ConfiguratorModel) -> None:
     model.set_state("TypedFeat", 100)
@@ -94,6 +95,10 @@ def test_set_state_unknown_feature_does_not_raise(model: ConfiguratorModel) -> N
     model.set_state("NonExistent", True)  # must not raise
 
 
+# ---------------------------------------------------------------------------
+# Option / Question string representations
+# ---------------------------------------------------------------------------
+
 def test_option_str(model: ConfiguratorModel) -> None:
     f = Feature("Child1", feature_type=FeatureType.BOOLEAN)
     opt = Option(f)
@@ -107,7 +112,7 @@ def test_question_str(model: ConfiguratorModel) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TestConfigureOperation
+# Configure — answer_question
 # ---------------------------------------------------------------------------
 
 def test_answer_question_success(mocked_configure: Configure, model: ConfiguratorModel) -> None:
@@ -129,7 +134,7 @@ def test_answer_question_conflict_rolls_back(
     mocked_configure: Configure, model: ConfiguratorModel
 ) -> None:
     """A contradicting answer must be rolled back automatically."""
-    mocked_configure.pysat.propagate.return_value = (False, [])
+    model.solver_backend.propagate.return_value = None  # simulate contradiction
     model.set_state("TypedFeat", 10)
 
     success = mocked_configure.answer_question({"TypedFeat": 99})
@@ -137,6 +142,10 @@ def test_answer_question_conflict_rolls_back(
     assert not success
     assert model.options_by_name["TypedFeat"].value == 10
 
+
+# ---------------------------------------------------------------------------
+# Configure — undo_answer
+# ---------------------------------------------------------------------------
 
 def test_undo_restores_previous_value(
     mocked_configure: Configure, model: ConfiguratorModel
@@ -155,6 +164,10 @@ def test_undo_with_empty_history_returns_false(mocked_configure: Configure) -> N
     assert not mocked_configure.undo_answer()
 
 
+# ---------------------------------------------------------------------------
+# Configure — navigation helpers
+# ---------------------------------------------------------------------------
+
 def test_is_first_question(mocked_configure: Configure, model: ConfiguratorModel) -> None:
     model.current_question_index = 0
     assert mocked_configure.is_first_question()
@@ -169,6 +182,10 @@ def test_is_finished(mocked_configure: Configure, model: ConfiguratorModel) -> N
     model.current_question_index = len(model.questions)
     assert mocked_configure.is_finished()
 
+
+# ---------------------------------------------------------------------------
+# Configure — get_current_status
+# ---------------------------------------------------------------------------
 
 def test_get_current_status_keys(mocked_configure: Configure) -> None:
     status = mocked_configure.get_current_status()

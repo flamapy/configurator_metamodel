@@ -8,13 +8,15 @@ from flamapy.metamodels.configurator_metamodel.transformation.fm_to_configurator
 from flamapy.metamodels.configurator_metamodel.operations.configure import Configure
 
 
-@pytest.mark.parametrize("path", [
-    "resources/models/uvl_models/Pizzas.uvl",
+@pytest.mark.parametrize("solver,path", [
+    ("pysat", "resources/models/uvl_models/Pizzas.uvl"),
+    ("z3",    "resources/models/uvl_models/Pizzas.uvl"),
+    ("z3",    "resources/models/uvl_models/Pizzas_typed.uvl"),
 ])
-def test_full_configuration_run(path: str) -> None:
+def test_full_configuration_run(solver: str, path: str) -> None:
     """Load FM → transform → execute → auto-answer all questions → assert finished."""
     fm = UVLReader(path).transform()
-    configurator_model = FmToConfigurator(fm).transform()
+    configurator_model = FmToConfigurator(fm, solver=solver).transform()
 
     op = Configure()
     op.execute(configurator_model)
