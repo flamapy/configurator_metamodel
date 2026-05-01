@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from flamapy.core.transformations.model_to_model import ModelToModel
-from flamapy.metamodels.fm_metamodel.models.feature_model import Feature, FeatureModel
+from flamapy.metamodels.fm_metamodel.models.feature_model import Feature, FeatureModel, FeatureType
 from flamapy.metamodels.fm_metamodel.operations.fm_core_features import FMCoreFeatures
 from flamapy.metamodels.configurator_metamodel.models.configurator_model import (
     ConfiguratorModel,
@@ -64,7 +64,8 @@ class FmToConfigurator(ModelToModel):
                 self.destination_model.add_question(question)
 
         for core_feature in core_features:
-            self.destination_model.set_state(core_feature.name, True)
+            if core_feature.feature_type is FeatureType.BOOLEAN:
+                self.destination_model.set_state(core_feature.name, True)
 
         return self.destination_model
 

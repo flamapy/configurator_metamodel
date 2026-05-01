@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from flamapy.core.operations.abstract_operation import Operation
+from flamapy.metamodels.fm_metamodel.models.feature_model import FeatureType
 from flamapy.metamodels.configurator_metamodel.models import (
     ConfiguratorModel,
     Option,
@@ -87,11 +88,23 @@ class Configure(Operation):
         return self._model.questions[self._model.current_question_index]
 
     def get_possible_options(self) -> List[Option]:
-        """Return undecided, non-mandatory options for the current question."""
+        """Return options for the current question that still require user input.
+
+        An option is included when it is UNDECIDED and at least one of the
+        following holds:
+        - The feature is not mandatory (the user must choose whether to include it).
+        - The feature is not of boolean type (even if mandatory, a non-boolean
+          feature — e.g. a string attribute — has not yet received a value from
+          the user and must still be presented as a question).
+
+        Mandatory boolean features are the only ones excluded: they are always
+        selected automatically and carry no user-facing choice.
+        """
         return [
             option
             for option in self.get_current_question().options
-            if option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory()
+            if (option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory()
+                or option.status == OptionStatus.UNDECIDED and not option.feature.feature_type is FeatureType.BOOLEAN)
         ]
 
     def next_question(self) -> bool:
@@ -179,7 +192,8 @@ class Configure(Operation):
 
         # Ensure the current question's parent feature is also marked selected
         current_q_name = self.get_current_question().name
-        if current_q_name in self._model.options_by_name:
+        current_q__feature_type = self.get_current_question().feature.feature_type
+        if current_q_name in self._model.options_by_name and current_q__feature_type is FeatureType.BOOLEAN:
             self._model.set_state(current_q_name, True)
 
         if self.is_last_question():
