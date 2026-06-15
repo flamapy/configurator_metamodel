@@ -1,0 +1,24 @@
+namespace PizzaTyped
+
+features
+	Pizza {abstract}
+		mandatory
+			Topping
+				or
+					Salami
+					Ham
+					Mozzarella
+			Size
+				alternative
+					Normal
+					Big
+			Dough
+				alternative
+					Neapolitan
+					Sicilian
+		optional
+			CheesyCrust
+			Integer SpicyLevel
+constraints
+	CheesyCrust => Big
+	SpicyLevel >= 1 & SpicyLevel <= 5

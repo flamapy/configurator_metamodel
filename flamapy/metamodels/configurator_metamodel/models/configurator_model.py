@@ -1,10 +1,9 @@
 import logging
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from flamapy.core.models.variability_model import VariabilityModel
 from flamapy.metamodels.fm_metamodel.models.feature_model import Feature, FeatureModel
-from flamapy.metamodels.pysat_metamodel.models.pysat_model import PySATModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,8 +48,10 @@ class Question:
 class ConfiguratorModel(VariabilityModel):
     """A variability model that drives an interactive configuration session.
 
-    Wraps a FeatureModel and its SAT representation to guide users through
-    a sequence of questions, enforcing constraints at every step.
+    Wraps a FeatureModel and a solver backend to guide users through a sequence
+    of questions, enforcing constraints at every step.  The backend is
+    solver-agnostic: pass a :class:`PySATBackend` for boolean models or a
+    :class:`Z3Backend` for models with typed features (INTEGER, REAL, STRING).
     """
 
     @staticmethod
@@ -59,7 +60,7 @@ class ConfiguratorModel(VariabilityModel):
 
     def __init__(self) -> None:
         self.feature_model: FeatureModel
-        self.pysat_metamodel: PySATModel = None
+        self.solver_backend: Optional[Any] = None  # SolverBackend
 
         self.questions: List[Question] = []
         self.options_by_name: Dict[str, Option] = {}

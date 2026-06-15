@@ -2,71 +2,70 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from flamapy.core.operations.abstract_operation import Operation
+from flamapy.metamodels.fm_metamodel.models.feature_model import FeatureType
 from flamapy.metamodels.configurator_metamodel.models import (
     ConfiguratorModel,
     Option,
     OptionStatus,
     Question,
 )
-from pysat.solvers import Solver
 
 LOGGER = logging.getLogger(__name__)
-
-_DEFAULT_SOLVER = 'glucose3'
 
 
 class Configure(Operation):
     """Interactive configuration operation for a ConfiguratorModel.
 
     Guides the user through a sequence of questions derived from the feature
-    model, propagating SAT constraints after every answer and supporting undo.
+    model, propagating constraints after every answer and supporting undo.
+
+    The operation is solver-agnostic: it delegates all satisfiability and
+    propagation work to the :class:`SolverBackend` stored on the model.
+    Use ``FmToConfigurator(fm, solver='pysat')`` (default) for boolean models
+    or ``FmToConfigurator(fm, solver='z3')`` for typed-feature models.
     """
 
     def __init__(self) -> None:
-        self.result = 0
-        self.pysat: Optional[Solver] = None
+        self.result: int = 0
         self.configurator_model: Optional[ConfiguratorModel] = None
 
     # ------------------------------------------------------------------
     # Flamapy Operation interface
     # ------------------------------------------------------------------
 
-    def get_result(self) -> List[int]:
-        """Return the current SAT assumptions (selected / deselected literals)."""
-        return self._get_current_assumptions()
+    def get_result(self) -> Dict[str, Any]:
+        """Return the current configuration as a ``{feature_name: value}`` dict."""
+        return self._get_configuration()
 
     def execute(self, model: ConfiguratorModel) -> 'Configure':
-        """Attach the operation to *model* and initialise the SAT solver."""
+        """Attach the operation to *model*.  The backend is already initialised."""
         self.configurator_model = model
-
-        if self.pysat is None:
-            self.pysat = Solver(name=_DEFAULT_SOLVER)
-            for clause in self.configurator_model.pysat_metamodel.get_all_clauses():
-                self.pysat.add_clause(clause)
-
         return self
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _get_current_assumptions(self) -> List[int]:
-        """Build the list of SAT literals for every decided option."""
-        assumptions: List[int] = []
-        variables = self.configurator_model.pysat_metamodel.variables
-        for question in self.configurator_model.questions:
+    @property
+    def _model(self) -> ConfiguratorModel:
+        assert self.configurator_model is not None
+        return self.configurator_model
+
+    def _get_decisions(self) -> Dict[str, Any]:
+        """Current decided options as ``{feature_name: value}``."""
+        result: Dict[str, Any] = {}
+        for question in self._model.questions:
             for option in question.options:
-                var = variables[option.feature.name]
                 if option.status == OptionStatus.SELECTED:
-                    assumptions.append(var)
+                    result[option.feature.name] = option.value if option.value is not None else True
                 elif option.status == OptionStatus.DESELECTED:
-                    assumptions.append(-var)
-        return assumptions
+                    result[option.feature.name] = False
+        return result
 
     def _get_configuration(self) -> Dict[str, Any]:
         """Snapshot the current configuration as a plain dictionary."""
         config: Dict[str, Any] = {}
-        for question in self.configurator_model.questions:
+        for question in self._model.questions:
             for option in question.options:
                 if option.status == OptionStatus.SELECTED:
                     config[option.feature.name] = option.value if option.value is not None else True
@@ -75,16 +74,6 @@ class Configure(Operation):
                 else:
                     config[option.feature.name] = None
         return config
-
-    def _propagate(self) -> Optional[Dict[int, bool]]:
-        """Run unit propagation and return implied literals, or None on conflict."""
-        assumptions = self._get_current_assumptions()
-        status, implied_lits = self.pysat.propagate(assumptions=assumptions)
-
-        if status is False:
-            return None
-
-        return {abs(lit): lit > 0 for lit in implied_lits}
 
     # ------------------------------------------------------------------
     # Navigation
@@ -96,14 +85,26 @@ class Configure(Operation):
 
     def get_current_question(self) -> Question:
         """Return the question at the current index."""
-        return self.configurator_model.questions[self.configurator_model.current_question_index]
+        return self._model.questions[self._model.current_question_index]
 
     def get_possible_options(self) -> List[Option]:
-        """Return undecided, non-mandatory options for the current question."""
+        """Return options for the current question that still require user input.
+
+        An option is included when it is UNDECIDED and at least one of the
+        following holds:
+        - The feature is not mandatory (the user must choose whether to include it).
+        - The feature is not of boolean type (even if mandatory, a non-boolean
+          feature — e.g. a string attribute — has not yet received a value from
+          the user and must still be presented as a question).
+
+        Mandatory boolean features are the only ones excluded: they are always
+        selected automatically and carry no user-facing choice.
+        """
         return [
             option
             for option in self.get_current_question().options
-            if option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory()
+            if (option.status == OptionStatus.UNDECIDED and not option.feature.is_mandatory()
+                or option.status == OptionStatus.UNDECIDED and not option.feature.feature_type is FeatureType.BOOLEAN)
         ]
 
     def next_question(self) -> bool:
@@ -116,13 +117,13 @@ class Configure(Operation):
             if self.is_last_question() or self.is_finished():
                 return False
 
-            self.configurator_model.current_question_index += 1
+            self._model.current_question_index += 1
 
             if self.get_possible_options():
                 return True
 
             # No choices here; record state and keep advancing
-            self.configurator_model.history.append(self._get_configuration())
+            self._model.history.append(self._get_configuration())
 
     def previous_question(self) -> bool:
         """Retreat to the previous question that has at least one possible option.
@@ -135,27 +136,27 @@ class Configure(Operation):
                 return False
 
             self.undo_answer()
-            self.configurator_model.current_question_index -= 1
+            self._model.current_question_index -= 1
 
             if self.get_possible_options():
                 return True
 
     def is_first_question(self) -> bool:
         """Return True if the current question is the first one."""
-        return self.configurator_model.current_question_index == 0
+        return self._model.current_question_index == 0
 
     def is_last_question(self) -> bool:
         """Return True if the current question is the last one."""
         return (
-            len(self.configurator_model.questions) - 1
-            == self.configurator_model.current_question_index
+            len(self._model.questions) - 1
+            == self._model.current_question_index
         )
 
     def is_finished(self) -> bool:
         """Return True if all questions have been answered."""
         return (
-            len(self.configurator_model.questions)
-            == self.configurator_model.current_question_index
+            len(self._model.questions)
+            == self._model.current_question_index
         )
 
     # ------------------------------------------------------------------
@@ -172,30 +173,31 @@ class Configure(Operation):
             ``True`` if the answer is consistent with the model constraints,
             ``False`` if it causes a contradiction (the change is rolled back).
         """
-        self.configurator_model.history.append(self._get_configuration())
+        self._model.history.append(self._get_configuration())
 
         for name, value in answer.items():
-            self.configurator_model.set_state(name, value)
+            self._model.set_state(name, value)
 
-        result = self._propagate()
-        if result is None:
+        assert self._model.solver_backend is not None, "No solver backend — call execute() first."
+        implied = self._model.solver_backend.propagate(self._get_decisions())
+        if implied is None:
             self.undo_answer()
             LOGGER.debug(
                 "Answer leads to a contradiction; change rolled back. Please try again."
             )
             return False
 
-        features = self.configurator_model.pysat_metamodel.features
-        for var_id, value in result.items():
-            self.configurator_model.set_state(features[var_id], value)
+        for name, value in implied.items():
+            self._model.set_state(name, value)
 
         # Ensure the current question's parent feature is also marked selected
         current_q_name = self.get_current_question().name
-        if current_q_name in self.configurator_model.options_by_name:
-            self.configurator_model.set_state(current_q_name, True)
+        current_q__feature_type = self.get_current_question().feature.feature_type
+        if current_q_name in self._model.options_by_name and current_q__feature_type is FeatureType.BOOLEAN:
+            self._model.set_state(current_q_name, True)
 
         if self.is_last_question():
-            self.configurator_model.current_question_index += 1
+            self._model.current_question_index += 1
 
         LOGGER.debug("Answer accepted.")
         return True
@@ -206,12 +208,12 @@ class Configure(Operation):
         Returns:
             ``True`` if history was available and state was restored, ``False`` otherwise.
         """
-        if not self.configurator_model.history:
+        if not self._model.history:
             return False
 
-        last_config = self.configurator_model.history.pop()
+        last_config = self._model.history.pop()
         for name, value in last_config.items():
-            self.configurator_model.set_state(name, value)
+            self._model.set_state(name, value)
         return True
 
     # ------------------------------------------------------------------
@@ -233,7 +235,7 @@ class Configure(Operation):
         return {
             'currentQuestion': self.get_current_question().name,
             'currentQuestionType': self.get_current_question_type(),
-            'currentQuestionIndex': self.configurator_model.current_question_index,
+            'currentQuestionIndex': self._model.current_question_index,
             'isLastQuestion': self.is_last_question(),
             'possibleOptions': [
                 {'id': n, 'name': o.name, 'featureType': o.feature.feature_type}
